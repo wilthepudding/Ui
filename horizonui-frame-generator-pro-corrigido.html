@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HorizonUI Video → Animated Background</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+  <style>
+    :root {
+      --bg: #0e1117;
+      --panel: #151a23;
+      --panel2: #1b2230;
+      --text: #eef3ff;
+      --muted: #9aa7bd;
+      --accent: #66d9ef;
+      --accent2: #a78bfa;
+      --ok: #6ee7b7;
+      --danger: #ff6b6b;
+      --border: rgba(255,255,255,.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(102,217,239,.15), transparent 35%),
+        radial-gradient(circle at top right, rgba(167,139,250,.15), transparent 35%),
+        var(--bg);
+      color: var(--text);
+    }
+    main { width: min(1160px, calc(100% - 28px)); margin: 0 auto; padding: 28px 0 42px; }
+    h1 { margin: 0 0 10px; font-size: clamp(30px, 5vw, 54px); line-height: 1; letter-spacing: -.05em; }
+    .sub { color: var(--muted); line-height: 1.55; margin: 0 0 22px; }
+    .grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.03));
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,.35);
+    }
+    .inner { padding: 20px; }
+    .drop {
+      min-height: 260px;
+      border: 1.5px dashed rgba(255,255,255,.25);
+      border-radius: 18px;
+      background: rgba(255,255,255,.04);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 20px;
+      cursor: pointer;
+    }
+    .drop:hover { border-color: var(--accent); }
+    input[type=file] { display: none; }
+    .preview { display: none; width: 100%; max-height: 360px; border-radius: 16px; background: #000; object-fit: contain; }
+    .form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+    label { display: grid; gap: 7px; color: var(--muted); font-size: 13px; font-weight: 750; }
+    input, select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 13px 14px;
+      background: var(--panel2);
+      color: var(--text);
+      font: inherit;
+    }
+    input[readonly] { opacity: .85; }
+    input[type=checkbox] { width: auto; accent-color: var(--accent); transform: scale(1.1); }
+    .check { grid-template-columns: auto 1fr; align-items: center; gap: 10px; }
+    .wide { grid-column: 1 / -1; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    button {
+      border: 0;
+      border-radius: 15px;
+      padding: 13px 16px;
+      font-weight: 900;
+      cursor: pointer;
+      color: #081018;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+    }
+    button.secondary { background: rgba(255,255,255,.08); border: 1px solid var(--border); color: var(--text); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .bar { height: 14px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid var(--border); overflow: hidden; margin-top: 16px; }
+    .prog { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--ok)); transition: .2s; }
+    .status { min-height: 24px; margin-top: 10px; color: var(--muted); font-size: 14px; white-space: pre-wrap; }
+    .note {
+      margin-top: 14px;
+      padding: 13px;
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      color: var(--muted);
+      background: rgba(255,255,255,.045);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .note code { color: var(--accent); background: rgba(0,0,0,.22); padding: 2px 6px; border-radius: 7px; }
+    .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 16px; }
+    .kpi { border: 1px solid var(--border); border-radius: 14px; background: rgba(255,255,255,.04); padding: 12px; }
+    .kpi b { display: block; font-size: 22px; margin-top: 3px; color: var(--text); }
+    .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 9px; max-height: 560px; overflow: auto; }
+    .thumb { border: 1px solid var(--border); background: rgba(255,255,255,.04); border-radius: 13px; overflow: hidden; }
+    .thumb img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: #000; }
+    .thumb div { font-size: 11px; color: var(--muted); padding: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .empty { min-height: 180px; display: grid; place-items: center; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 16px; padding: 20px; }
+    .warn { color: #ffd166; }
+    .danger { color: var(--danger); }
+    @media (max-width: 900px) { .grid, .form, .kpis { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Vídeo → HorizonUI Background</h1>
+  <p class="sub">
+    Esta versão usa <b>FFmpeg no navegador</b>, que é muito mais fiel que capturar frames com canvas manual.
+    Ela extrai frames do vídeo inteiro mantendo a mesma duração e a mesma velocidade. Você escolhe o FPS.
+  </p>
+
+  <section class="grid">
+    <div class="card">
+      <div class="inner">
+        <label class="drop" id="drop">
+          <input id="file" type="file" accept="video/*,.mp4,.webm,.mov,.mkv,.avi" />
+          <video id="preview" class="preview" controls muted playsinline preload="metadata"></video>
+          <div id="dropText">
+            <b style="font-size:22px">Toque para escolher um vídeo</b><br>
+            <span style="color:var(--muted)">MP4/H.264 costuma funcionar melhor.</span>
+          </div>
+        </label>
+
+        <div class="form">
+          <label>
+            FPS final
+            <select id="fps">
+              <option value="15">15 FPS (leve)</option>
+              <option value="24">24 FPS (bom)</option>
+              <option value="30" selected>30 FPS (fiel)</option>
+              <option value="60">60 FPS (muito pesado)</option>
+            </select>
+          </label>
+
+          <label>
+            Usar duração
+            <select id="clipMode">
+              <option value="full" selected>Vídeo inteiro</option>
+              <option value="10">Só 10 segundos</option>
+              <option value="15">Só 15 segundos</option>
+              <option value="20">Só 20 segundos</option>
+            </select>
+          </label>
+
+          <label>
+            Largura
+            <input id="width" type="number" min="128" max="1920" step="2" value="854" />
+          </label>
+
+          <label>
+            Altura
+            <input id="height" type="number" min="128" max="1080" step="2" value="480" />
+          </label>
+
+          <label>
+            Ajuste do vídeo
+            <select id="fit">
+              <option value="contain" selected>Mostrar tudo (barras se necessário)</option>
+              <option value="cover">Preencher e cortar bordas</option>
+              <option value="stretch">Esticar para caber</option>
+            </select>
+          </label>
+
+          <label>
+            Nome do pack
+            <input id="packName" type="text" value="HorizonUI Custom Video Background" />
+          </label>
+
+          <label class="wide check">
+            <input id="enableLoading" type="checkbox" checked>
+            <span>Usar o primeiro frame também como loading background</span>
+          </label>
+
+          <label class="wide">
+            Duração por frame no pack
+            <input id="durationPerFrame" type="text" readonly value="0.033333" />
+          </label>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi"><span>Duração usada</span><b id="usedDuration">—</b></div>
+          <div class="kpi"><span>Frames estimados</span><b id="estimatedFrames">—</b></div>
+          <div class="kpi"><span>Loop final</span><b id="finalLoop">—</b></div>
+          <div class="kpi"><span>Observação</span><b id="weightNote">—</b></div>
+        </div>
+
+        <div class="actions">
+          <button id="prepareBtn">Carregar FFmpeg</button>
+          <button id="generateBtn" disabled>Gerar .mcpack</button>
+          <button id="zipBtn" class="secondary" disabled>Baixar ZIP dos frames</button>
+          <button id="clearBtn" class="secondary">Limpar</button>
+        </div>
+
+        <div class="bar"><div class="prog" id="progress"></div></div>
+        <div class="status" id="status">Escolha um vídeo e carregue o FFmpeg.</div>
+
+        <div class="note">
+          <b>Como essa versão funciona:</b><br>
+          • Ela mantém a velocidade do vídeo definindo <code>duração por frame = 1 ÷ FPS</code>.<br>
+          • A quantidade de frames fica <code>duração × FPS</code>.<br>
+          • <b>30 FPS</b> é o modo mais fiel. <b>60 FPS</b> pode gerar packs enormes e muito pesados.<br>
+          • Em celular, vídeos longos em 30/60 FPS podem demorar bastante. Em PC, o resultado costuma ficar melhor.<br>
+          • No Minecraft, ative este pack <b>acima</b> do HorizonUI original na lista de resource packs.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="inner">
+        <h2 style="margin:0 0 14px">Prévia de alguns frames</h2>
+        <div id="thumbs" class="thumbs"><div class="empty">Os frames gerados vão aparecer aqui.</div></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const fileInput = $('file');
+  const drop = $('drop');
+  const preview = $('preview');
+  const dropText = $('dropText');
+  const fpsInput = $('fps');
+  const clipModeInput = $('clipMode');
+  const widthInput = $('width');
+  const heightInput = $('height');
+  const fitInput = $('fit');
+  const packNameInput = $('packName');
+  const enableLoadingInput = $('enableLoading');
+  const durationPerFrameInput = $('durationPerFrame');
+  const usedDurationEl = $('usedDuration');
+  const estimatedFramesEl = $('estimatedFrames');
+  const finalLoopEl = $('finalLoop');
+  const weightNoteEl = $('weightNote');
+  const prepareBtn = $('prepareBtn');
+  const generateBtn = $('generateBtn');
+  const zipBtn = $('zipBtn');
+  const clearBtn = $('clearBtn');
+  const progressEl = $('progress');
+  const statusEl = $('status');
+  const thumbsEl = $('thumbs');
+
+  let sourceFile = null;
+  let sourceUrl = null;
+  let sourceDuration = 0;
+  let ffmpeg = null;
+  let ffmpegReady = false;
+  let extractedFrames = [];
+
+  function setStatus(text, type) {
+    statusEl.textContent = text;
+    statusEl.className = 'status' + (type === 'warn' ? ' warn' : type === 'danger' ? ' danger' : '');
+  }
+
+  function setProgress(value) {
+    progressEl.style.width = Math.max(0, Math.min(100, value)) + '%';
+  }
+
+  function formatSeconds(value) {
+    return (Math.round(value * 100) / 100).toFixed(2) + ' s';
+  }
+
+  function safeName(name) {
+    return (name || 'HorizonUI_Custom_Video_Background')
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, '-')
+      .replace(/\s+/g, '_') || 'HorizonUI_Custom_Video_Background';
+  }
+
+  function uuid() {
+    return crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 3 | 8);
+      return v.toString(16);
+    });
+  }
+
+  function getFPS() {
+    return Math.max(1, parseInt(fpsInput.value, 10) || 30);
+  }
+
+  function getDurationPerFrame() {
+    return 1 / getFPS();
+  }
+
+  function getClipDuration() {
+    if (!sourceDuration) return 0;
+    const mode = clipModeInput.value;
+    if (mode === 'full') return sourceDuration;
+    const seconds = parseFloat(mode) || sourceDuration;
+    return Math.min(sourceDuration, seconds);
+  }
+
+  function getEstimatedFrameCount() {
+    const frames = Math.round(getClipDuration() * getFPS());
+    return Math.max(1, frames || 0);
+  }
+
+  function updateEstimates() {
+    const fps = getFPS();
+    const perFrame = getDurationPerFrame();
+    durationPerFrameInput.value = perFrame.toFixed(6);
+
+    const used = getClipDuration();
+    const frames = getEstimatedFrameCount();
+
+    usedDurationEl.textContent = used ? formatSeconds(used) : '—';
+    estimatedFramesEl.textContent = frames ? String(frames) : '—';
+    finalLoopEl.textContent = frames ? formatSeconds(frames / fps) : '—';
+
+    if (!frames) {
+      weightNoteEl.textContent = '—';
+    } else if (frames <= 200) {
+      weightNoteEl.textContent = 'Leve';
+    } else if (frames <= 500) {
+      weightNoteEl.textContent = 'Médio';
+    } else if (frames <= 900) {
+      weightNoteEl.textContent = 'Pesado';
+    } else {
+      weightNoteEl.textContent = 'Muito pesado';
+    }
+  }
+
+  function clearFrames() {
+    extractedFrames.forEach((item) => URL.revokeObjectURL(item.url));
+    extractedFrames = [];
+    zipBtn.disabled = true;
+    renderThumbs();
+  }
+
+  function renderThumbs() {
+    thumbsEl.innerHTML = '';
+    if (!extractedFrames.length) {
+      thumbsEl.innerHTML = '<div class="empty">Os frames gerados vão aparecer aqui.</div>';
+      return;
+    }
+    const step = Math.max(1, Math.ceil(extractedFrames.length / 30));
+    extractedFrames.forEach((frame, i) => {
+      if (i % step !== 0 && i !== extractedFrames.length - 1) return;
+      const item = document.createElement('div');
+      item.className = 'thumb';
+      item.innerHTML = '<img src="' + frame.url + '"><div>' + frame.name + '</div>';
+      thumbsEl.appendChild(item);
+    });
+  }
+
+  function setFile(file) {
+    clearFrames();
+    sourceFile = file;
+    sourceDuration = 0;
+    if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+    sourceUrl = URL.createObjectURL(file);
+    preview.src = sourceUrl;
+    preview.style.display = 'block';
+    dropText.style.display = 'none';
+    generateBtn.disabled = !(ffmpegReady && sourceFile);
+    setStatus('Vídeo carregado. Lendo duração...');
+  }
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) setFile(file);
+  });
+
+  drop.addEventListener('dragover', (e) => e.preventDefault());
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) setFile(file);
+  });
+
+  preview.addEventListener('loadedmetadata', () => {
+    sourceDuration = Number.isFinite(preview.duration) ? preview.duration : 0;
+    updateEstimates();
+    setStatus('Vídeo pronto. Duração detectada: ' + formatSeconds(sourceDuration) + '.');
+  });
+
+  [fpsInput, clipModeInput].forEach((el) => el.addEventListener('change', updateEstimates));
+
+  async function ensureFFmpegLoaded() {
+    if (ffmpegReady) return;
+    setStatus('Carregando FFmpeg... Isso pode levar um pouco na primeira vez.');
+    setProgress(5);
+    try {
+      const { createFFmpeg, fetchFile } = FFmpeg;
+      window.__fetchFile = fetchFile;
+      ffmpeg = createFFmpeg({
+        log: false,
+        corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+        progress: ({ ratio }) => {
+          if (typeof ratio === 'number') {
+            setProgress(10 + ratio * 65);
+          }
+        }
+      });
+      await ffmpeg.load();
+      ffmpegReady = true;
+      prepareBtn.textContent = 'FFmpeg carregado';
+      prepareBtn.disabled = true;
+      generateBtn.disabled = !sourceFile;
+      setStatus('FFmpeg carregado com sucesso.');
+      setProgress(0);
+    } catch (err) {
+      console.error(err);
+      setStatus('Falha ao carregar FFmpeg. Abra com internet ligada e tente de novo.', 'danger');
+      throw err;
+    }
+  }
+
+  prepareBtn.addEventListener('click', async () => {
+    try {
+      await ensureFFmpegLoaded();
+    } catch {}
+  });
+
+  function buildFilter() {
+    const w = Math.max(128, parseInt(widthInput.value, 10) || 854);
+    const h = Math.max(128, parseInt(heightInput.value, 10) || 480);
+    const fps = getFPS();
+    const fit = fitInput.value;
+
+    if (fit === 'stretch') {
+      return `fps=${fps},scale=${w}:${h}`;
+    }
+    if (fit === 'cover') {
+      return `fps=${fps},scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
+    }
+    return `fps=${fps},scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black`;
+  }
+
+  async function extractFrames() {
+    const fps = getFPS();
+    const usedDuration = getClipDuration();
+    const filter = buildFilter();
+    const outputPattern = 'hans_common_%03d.png';
+
+    ffmpeg.FS('writeFile', 'input_video', await window.__fetchFile(sourceFile));
+
+    const args = ['-i', 'input_video'];
+    if (usedDuration && usedDuration < sourceDuration) {
+      args.push('-t', String(usedDuration));
+    }
+    args.push('-vf', filter, outputPattern);
+
+    setStatus('Extraindo frames com FFmpeg...');
+    setProgress(8);
+    await ffmpeg.run(...args);
+
+    const files = ffmpeg.FS('readdir', '/').filter((name) => /^hans_common_\d+\.png$/i.test(name)).sort((a, b) => {
+      const an = parseInt(a.match(/(\d+)/)[1], 10);
+      const bn = parseInt(b.match(/(\d+)/)[1], 10);
+      return an - bn;
+    });
+
+    if (!files.length) throw new Error('Nenhum frame foi gerado.');
+
+    clearFrames();
+    extractedFrames = files.map((name) => {
+      const data = ffmpeg.FS('readFile', name);
+      const blob = new Blob([data.buffer], { type: 'image/png' });
+      return { name, blob, url: URL.createObjectURL(blob) };
+    });
+    renderThumbs();
+    return extractedFrames;
+  }
+
+  async function buildFramesZip() {
+    const zip = new JSZip();
+    const folder = zip.folder('hrzn_animated_background');
+    extractedFrames.forEach((frame) => folder.file(frame.name, frame.blob));
+    return zip.generateAsync({ type: 'blob' }, (meta) => {
+      setProgress(75 + meta.percent * 0.2);
+    });
+  }
+
+  function makeManifest() {
+    return JSON.stringify({
+      format_version: 2,
+      header: {
+        description: 'Custom animated video background for HorizonUI BE.',
+        name: packNameInput.value || 'HorizonUI Custom Video Background',
+        uuid: uuid(),
+        version: [1, 0, 0],
+        min_engine_version: [1, 21, 0]
+      },
+      modules: [{
+        description: 'Custom animated video background for HorizonUI BE.',
+        type: 'resources',
+        uuid: uuid(),
+        version: [1, 0, 0]
+      }]
+    }, null, 2);
+  }
+
+  function makeGlobals() {
+    // Mantém as variáveis que o HorizonUI Extension espera encontrar.
+    // Se faltar variável aqui, algumas partes do UI podem cair para o pack original.
+    return JSON.stringify({
+      '$hrzn.ui.use_extension': true,
+      '$hrzn.ui.creator_name': 'Custom Video',
+      '$hrzn.ui.extension_version': '1.0.0',
+      '$duration_per_frame': Number(getDurationPerFrame().toFixed(6)),
+      '$duration_loading_per_frame': 2,
+
+      '$horizon_radio_unchecked_color': [1, 1, 1, 0],
+      '$horizon_radio_unchecked_hover_color': [1, 1, 1, 0],
+      '$horizon_radio_checked_color': [1, 1, 1, 0],
+      '$horizon_radio_checked_hover_color': [1, 1, 1, 0],
+
+      '$horizon_slider_step_background_color': [1, 1, 1, 0],
+      '$horizon_slider_step_background_hover_color': [1, 1, 1, 0],
+      '$horizon_slider_step_progress_progress_color': [1, 1, 1, 0],
+      '$horizon_slider_step_progress_progress_hover_color': [1, 1, 1, 0],
+      '$horizon_slider_background_color': [1, 1, 1, 0],
+      '$horizon_slider_background_hover_color': [1, 1, 1, 0],
+      '$horizon_slider_progress_color': [1, 1, 1, 0],
+      '$horizon_slider_progress_hover_color': [1, 1, 1, 0],
+      '$horizon_slider_slider_border_color': [1, 1, 1, 0],
+
+      '$horizon_toggle_on_hover_color': [1, 1, 1, 0],
+      '$horizon_toggle_on_color': [1, 1, 1, 0],
+      '$horizon_toggle_off_color': [1, 1, 1, 0],
+      '$horizon_toggle_off_hover_color': [1, 1, 1, 0],
+
+      '$light_toggle_default_text_color': [1, 1, 1, 0],
+      '$light_toggle_hover_text_color': [1, 1, 1, 0],
+      '$light_toggle_checked_hover_text_color': [1, 1, 1, 0],
+      '$light_toggle_checked_default_text_color': [1, 1, 1, 0],
+
+      '$hrzn.ui.force_skin': false,
+      '$hrzn.ui.do_not_use_viegnette': false
+    }, null, 2);
+  }
+
+  function makeAnimJson(frameCount) {
+    const states = [];
+    for (let i = 1; i <= frameCount; i++) {
+      const key = String(i).padStart(2, '0');
+      const next = i === frameCount ? '01' : String(i + 1).padStart(2, '0');
+      const offset = '-' + ((i - 1) * 100) + '%';
+      states.push('"' + key + '@hrzn_ui_wextension.hans_anim_base":' + JSON.stringify({
+        '$anm_offset': ['0px', offset],
+        next: '@hrzn_ui_wextension.' + next
+      }));
+    }
+
+    // Nomes obrigatórios dos frames:
+    // hrzn_animated_background/hans_common_001.png
+    // hrzn_animated_background/hans_common_002.png ...
+    return `{
+  "namespace": "hrzn_ui_wextension",
+  "hrzn_ui_settings_bg@core_img": {
+    "texture": "neko_ui_public_animated_background/blur"
+  },
+  "img": {
+    "type": "image",
+    "fill": true,
+    "bilinear": true,
+    "property_bag": {
+      "#true": "0",
+      "#false": ""
+    },
+    "bindings": [
+      {
+        "binding_name": "#collection_index",
+        "binding_type": "collection_details",
+        "binding_collection_name": "animated_background"
+      },
+      {
+        "binding_type": "view",
+        "source_property_name": "('#' + (#collection_index < 9))",
+        "target_property_name": "#pad00"
+      },
+      {
+        "binding_type": "view",
+        "source_property_name": "('#' + (#collection_index < 99))",
+        "target_property_name": "#pad0"
+      },
+      {
+        "binding_type": "view",
+        "source_property_name": "('hrzn_animated_background/hans' + '_common_' + #pad00 + #pad0 + (#collection_index + 1))",
+        "target_property_name": "#texture"
+      }
+    ]
+  },
+  "hrzn_ui_main_bg": {
+    "size": ["100%", "100%"],
+    "type": "stack_panel",
+    "anchor_from": "top_left",
+    "anchor_to": "top_left",
+    "offset": "@hrzn_ui_wextension.01",
+    "$duration_per_frame|default": ${getDurationPerFrame().toFixed(6)},
+    "$frames|default": ${frameCount},
+    "collection_name": "animated_background",
+    "factory": {
+      "name": "test",
+      "control_name": "hrzn_ui_wextension.img"
+    },
+    "property_bag": {
+      "#frames": "$frames"
+    },
+    "bindings": [
+      {
+        "binding_type": "view",
+        "source_property_name": "(#frames*1)",
+        "target_property_name": "#collection_length"
+      }
+    ]
+  },
+  "hans_anim_base": {
+    "destroy_at_end": "@hrzn_ui_wextension.bg_anim",
+    "anim_type": "offset",
+    "easing": "linear",
+    "duration": "$duration_per_frame",
+    "from": "$anm_offset",
+    "to": "$anm_offset"
+  },
+  ${states.join(',\n  ')}
+}`;
+  }
+  function makeLoadJson() {
+    return `{"namespace":"hrzn_ui_load_wextension","anim_base":{"anim_type":"offset","easing":"linear","duration":"$duration_loading_per_frame","from":"$anm_offset","to":"$anm_offset"},"img":{"type":"image","fill":true,"bilinear":true,"size":["100%","100%"],"texture":"('hrzn_loading_background/'+$img )"},"hans_load_background":{"type":"stack_panel","size":["100%","100%"],"anchor_from":"top_left","anchor_to":"top_left","offset":"@hrzn_ui_load_wextension.00","controls":[{"1@hrzn_ui_load_wextension.img":{"$img":"loading_background_1"}}]},"00@hrzn_ui_load_wextension.anim_base":{"$anm_offset":[0,"0%"],"next":"@hrzn_ui_load_wextension.00"}}`;
+  }
+
+  async function makeIconBlob() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 256, 256);
+    g.addColorStop(0, '#66d9ef');
+    g.addColorStop(1, '#a78bfa');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 74px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('VID', 128, 100);
+    ctx.font = 'bold 26px system-ui';
+    ctx.fillText('HUI BG', 128, 164);
+    return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  }
+
+  async function buildMcpack() {
+    const zip = new JSZip();
+    zip.file('manifest.json', makeManifest());
+    zip.file('pack_icon.png', await makeIconBlob());
+
+    const bg = zip.folder('hrzn_animated_background');
+    extractedFrames.forEach((frame) => bg.file(frame.name, frame.blob));
+
+    if (enableLoadingInput.checked && extractedFrames[0]) {
+      const loading = zip.folder('hrzn_loading_background');
+      loading.file('loading_background_1.png', extractedFrames[0].blob);
+    }
+
+    const ui = zip.folder('ui');
+    const globalsJson = makeGlobals();
+    const animJson = makeAnimJson(extractedFrames.length);
+    const loadJson = makeLoadJson();
+
+    ui.file('_global_variables.json', globalsJson);
+
+    // Coloca os arquivos nos dois lugares para cobrir as duas formas usadas nos packs:
+    // 1) na raiz, como no exemplo oficial do HorizonUI Extension;
+    // 2) dentro de ui/, para packs/versões que carregam via _ui_defs.json.
+    zip.file('.hrzn_public_bg_anim.json', animJson);
+    zip.file('.hrzn_public_bg_load.json', loadJson);
+    ui.file('.hrzn_public_bg_anim.json', animJson);
+    ui.file('.hrzn_public_bg_load.json', loadJson);
+    ui.file('_ui_defs.json', JSON.stringify({
+      ui_defs: [
+        '_global_variables.json',
+        '.hrzn_public_bg_anim.json',
+        '.hrzn_public_bg_load.json'
+      ]
+    }, null, 2));
+
+    return zip.generateAsync({ type: 'blob' }, (meta) => {
+      setProgress(78 + meta.percent * 0.22);
+    });
+  }
+
+  async function generateAll() {
+    if (!sourceFile) throw new Error('Escolha um vídeo primeiro.');
+    if (!ffmpegReady) throw new Error('Carregue o FFmpeg primeiro.');
+
+    const estimated = getEstimatedFrameCount();
+    if (estimated > 1500) {
+      const ok = confirm('Esse vídeo vai gerar cerca de ' + estimated + ' frames. Isso pode ser MUITO pesado. Quer continuar?');
+      if (!ok) return;
+    }
+
+    setProgress(2);
+    setStatus('Limpando arquivos antigos...');
+    try {
+      ffmpeg.FS('unlink', 'input_video');
+    } catch {}
+    try {
+      ffmpeg.FS('readdir', '/').filter((n) => /^hans_common_\d+\.png$/i.test(n)).forEach((n) => ffmpeg.FS('unlink', n));
+    } catch {}
+
+    await extractFrames();
+    setStatus('Montando .mcpack...');
+    const blob = await buildMcpack();
+    const filename = safeName(packNameInput.value) + '.mcpack';
+    setProgress(100);
+    downloadBlob(blob, filename);
+    zipBtn.disabled = false;
+    setStatus('Pronto. .mcpack gerado com ' + extractedFrames.length + ' frames.');
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  generateBtn.addEventListener('click', async () => {
+    try {
+      generateBtn.disabled = true;
+      setStatus('Iniciando geração...');
+      await generateAll();
+    } catch (err) {
+      console.error(err);
+      setStatus(err.message || 'Erro ao gerar o pack.', 'danger');
+    } finally {
+      generateBtn.disabled = !(ffmpegReady && sourceFile);
+    }
+  });
+
+  zipBtn.addEventListener('click', async () => {
+    if (!extractedFrames.length) return;
+    try {
+      setStatus('Montando ZIP dos frames...');
+      const blob = await buildFramesZip();
+      downloadBlob(blob, 'horizonui_video_frames.zip');
+      setStatus('ZIP dos frames baixado.');
+      setProgress(100);
+    } catch (err) {
+      console.error(err);
+      setStatus('Erro ao gerar o ZIP dos frames.', 'danger');
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    clearFrames();
+    if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+    sourceUrl = null;
+    sourceFile = null;
+    sourceDuration = 0;
+    fileInput.value = '';
+    preview.removeAttribute('src');
+    preview.style.display = 'none';
+    dropText.style.display = 'block';
+    generateBtn.disabled = true;
+    setProgress(0);
+    updateEstimates();
+    setStatus('Limpo. Escolha um vídeo novo.');
+  });
+
+  updateEstimates();
+})();
+</script>
+</body>
+</html>
